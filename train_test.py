@@ -180,10 +180,6 @@ def loadData(filepath, P, Q, train_ratio, test_ratio, h5mode=False, miss_rate=0.
     std.append(np.std(trainX[:, :, :, 0]))
     mean.append(np.mean(trainX[:, :, :, 0]))
     std.append(np.std(trainX[:, :, :, 0]))
-    # mean.append(np.mean(valX[:, :, :, 0]))
-    # std.append(np.std(valX[:, :, :, 0]))
-    # mean.append(np.mean(testX[:, :, :, 0]))
-    # std.append(np.std(testX[:, :, :, 0]))
 
     return trainX, trainM, valX, valM, testX, testM, mean, std, trainData[..., 0]
 
@@ -213,9 +209,6 @@ point_miss_rate = 0.25
 device = "cuda:0"
 data = 'nyc_25_v2'
 adj_path = "data/NYCTAXI/adj.npy"
-# sztx point25 dropout=0, lr=0.0012, weight_decay=0.0001
-# szdd block0.2 dropout=0 lr=0.0012, weight_decay=0.0001, (or use v3)
-# nyc point25 v2 dropout=0.3 lr=0.001, weight_decay=0.00005
 
 trainX, trainM, valX, valM, testX, testM, mean, std, trainData = loadData("data/NYCTAXI/nyctx_77.npz", 24, 12, 0.7, 0.2,
                                                                           miss_rate=point_miss_rate, series_in_day=24,
@@ -229,7 +222,7 @@ num_test = testX.shape[0]
 num_batch = math.ceil(num_train / batch_size)
 adj = loadGraph(adj_path)
 model = SP_TSFormer_MoE_v2(input_dim, emb_dim, Tembed_dim, output_dim, num_nodes, num_series, adj, num_heads, mlp_ratio, dropout, num_layers).to(device)
-# model.load_state_dict(torch.load("checkpoints/nyctx_best_val_mae_3.8.pth"))
+
 
 optimizer = optim.Adam(model.parameters(), lr=0.0013, weight_decay=0.00005)
 best_val_loss = None
@@ -255,16 +248,8 @@ for j in range(epoch):
         trainx[:, :, :, 0] = (trainx[:, :, :, 0] - mean[0]) / std[0]
         trainx[:, :, :, :1][trainm == 0] = 0
         xl, xh = disentangle(trainx[:, :, :, :1], 'db1', 1)
-        # trainx_s = np.concatenate((trainx, xh), axis=-1)
-        # trainx_t = np.concatenate((trainx, xl), axis=-1)
-        # trainx_s = torch.from_numpy(trainx_s).float()
         res = (model(trainx, xl, xh).flatten()[marg]) * std[0] + mean[0]
         loss = masked_mae(res, trainy, 0.0)
-        # res = model(trainx, xl, xh)
-        # res = res * std + mean
-        # f1loss = Freg(res, full_x, ~(torch.from_numpy(trainm).to(torch.bool)).to(device))
-        # res = res.flatten()[marg]
-        # loss = masked_mae(res, trainy, 0.0) + f1loss * 0.01
         mape = masked_mape(res, trainy, 0.0)
         rmse = masked_rmse(res, trainy, 0.0)
         loss.backward()
@@ -308,31 +293,6 @@ for j in range(epoch):
     wait += 1
     if wait > patience:
         break
-    if j % 5 == 0 or wait == 1:
-        test_batch = math.ceil(testX.shape[0] / batch_size)
-        test_loss = []
-        test_mape = []
-        test_rmse = []
-        for i in range(test_batch):
-            model.eval()
-            si = i * batch_size
-            ei = min(num_test, (i + 1) * batch_size)
-            testx = testX[si:ei].copy()
-            testm = testM[si:ei].copy()
-            marg = np.nonzero(testm.flatten() == 0)
-            testy = torch.from_numpy(testx[:, :, :, :1].flatten()[marg]).float().to(device)
-            testx[:, :, :, 0] = (testx[:, :, :, 0] - mean[2]) / std[2]
-            testx[:, :, :, :1][testm == 0] = 0
-            xl, xh = disentangle(testx[:, :, :, :1], 'db1', 1)
-            res = (model(testx, xl, xh).flatten()[marg]) * std[2] + mean[2]
-            loss = masked_mae(res, testy, 0.0)
-            mape = masked_mape(res, testy, 0.0)
-            rmse = masked_rmse(res, testy, 0.0)
-            test_loss.append(loss.item())
-            test_mape.append(mape.item())
-            test_rmse.append(rmse.item())
-        log = "Test MAE: {:.4f}, Test MAPE: {:.4f}, Test RMSE: {:.4f}"
-        print(log.format(np.mean(test_loss), np.mean(test_mape), np.mean(test_rmse)))
 
 if epoch != 0:
     model.load_state_dict(torch.load("checkpoints/" + data + "_best_val_mae.pth"))
