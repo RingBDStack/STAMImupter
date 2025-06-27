@@ -376,8 +376,9 @@ class GAT_layer_v3(nn.Module):
         attn = torch.softmax(Q_K, dim=-1)
         # cp = attn.argmax(dim=-2, keepdim=True).transpose(-2, -1)
         value = torch.matmul(attn, V)
-
         value = torch.cat(torch.split(value, value.shape[0] // self.h, 0), -1)
+        value = self.ofc(value)
+        
         projector = torch.cat(torch.split(Q_reduce, Q_reduce.shape[0] // self.h, 0), -1)
         M_pro = value.clone()
         K_reduce = K[torch.arange(B)[:, None, None],
@@ -396,7 +397,7 @@ class GAT_layer_v3(nn.Module):
         sQK = torch.softmax(torch.matmul(Q, sK.transpose(-1, -2)) / (self.d ** 0.5), dim=-1)
         value = torch.matmul(sQK, sV)
         value = torch.cat(torch.split(value, value.shape[0] // self.h, 0), -1)
-        value = self.ofc(value)
+        value = self.sofc(value)
         value = self.dpt(value)
         value = self.ln(value)
         value = self.ff(value)
